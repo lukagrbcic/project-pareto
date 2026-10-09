@@ -143,3 +143,5 @@ dmypy.json
 
 # Gurobi Troubleshooting files
 gurobi.*
+*.png
+/DIAGNOSTIC_CHANGES.md
