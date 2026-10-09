@@ -1112,6 +1112,14 @@ def _check_optional_data(
     # are not in required_parameters_with_option, but their entries index over
     # the set and crash the build the same way when it is missing or emptied.
 
+    def _tab_has_entries(tab):
+        data = df_parameters.get(tab)
+        if data is None:
+            return False
+        if hasattr(data, "empty"):
+            return not data.empty
+        return len(data) > 0
+
     def _nonempty_arc_tabs():
         return sorted(
             arc_tab
@@ -1121,7 +1129,7 @@ def _check_optional_data(
             and len(arc_tab) == 3
             and (arc_tab[0] == node_letter or arc_tab[1] == node_letter)
             and arc_tab[-1] in ("A", "T")
-            and df_parameters.get(arc_tab)
+            and _tab_has_entries(arc_tab)
         )
 
     # Here we check if 1) the set tab is missing (optional_set_name not in
@@ -1137,9 +1145,9 @@ def _check_optional_data(
         tabs = sorted(_input_parameters_dependent_on_optional_set) + _nonempty_arc_tabs()
         if set_findings is None:
             raise MissingDataError(
-                f"Essential data is incomplete: the workbook contains parameter tabs for "
-                f"'{optional_set_name}' (dependent tabs: "
-                f"{str(_input_parameters_dependent_on_optional_set)}), but the "
+                f"Essential data is incomplete: the workbook contains parameter or "
+                f"network-connection tabs referencing "
+                f"'{optional_set_name}' ({', '.join(tabs)}), but the "
                 f'"{optional_set_name}" set tab itself was not found in the workbook. '
                 f"Without that set, the model has no {optional_set_name} facilities and "
                 "the parameter tabs cannot be used."
@@ -1178,7 +1186,7 @@ def _check_optional_data(
         referencing_tabs = sorted(
             tab
             for tab in _input_parameters_dependent_on_optional_set
-            if df_parameters.get(tab)
+            if _tab_has_entries(tab)
         ) + _nonempty_arc_tabs()
         if referencing_tabs:
             if set_findings is None:
