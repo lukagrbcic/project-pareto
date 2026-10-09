@@ -1119,7 +1119,7 @@ def _check_optional_data(
         )
 
     if optional_set_name not in df_sets and (
-        len(_input_parameters_dependent_on_optional_set) > 0
+        len(_input_parameters_dependent_on_optional_set) > 0 or _nonempty_arc_tabs()
     ):
         tabs = sorted(_input_parameters_dependent_on_optional_set) + _nonempty_arc_tabs()
         if set_findings is None:
