@@ -22,7 +22,6 @@ Authors: PARETO Team
 
 # Imports
 import warnings
-# import itertools  # needed by the optional index-coverage checks at the end of check_required_data()
 from pareto.utilities.get_data import (
     get_valid_input_set_tab_names,
     get_valid_input_parameter_tab_names,
@@ -1163,15 +1162,18 @@ def _check_optional_data(
         set_findings.append((optional_set_name, "missing", tabs))
 
     # If the optional set is present but contains no facility names, while
-    # parameter tabs that reference it still contain entries, the model cannot
-    # be built: the referencing parameters are indexed over the now-empty set,
-    # so construction fails with an internal error such as "Index '('CP01',
-    # 'N08')' is not valid for indexed component 'p_CNA'". Raise a
-    # plain-language error instead, before the model is built.
+    # parameter or arc tabs that reference it still contain entries, the model
+    # cannot be built: the referencing parameters are indexed over the
+    # now-empty set, so construction fails with an internal error such as
+    # "Index '('CP01', 'N08')' is not valid for indexed component 'p_CNA'".
+    # Raise a plain-language error instead, before the model is built.
     if (
         optional_set_name in df_sets
         and len(df_sets[optional_set_name]) == 0
-        and len(_input_parameters_dependent_on_optional_set) > 0
+        and (
+            len(_input_parameters_dependent_on_optional_set) > 0
+            or _nonempty_arc_tabs()
+        )
     ):
         referencing_tabs = sorted(
             tab
