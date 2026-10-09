@@ -340,15 +340,13 @@ def check_required_data(df_sets, df_parameters, config, model_type="strategic"):
     )
     data_error_items.extend(water_quality_config_errors)
 
-    # Collect empty-set findings from every optional-set check below, so one
-    # consolidated error can list all affected sets at once instead of only
-    # the first one hit.
-    empty_set_findings = []
+    # Collect set-tab findings (deleted or present-but-empty) from every
+    # optional-set check below, so one consolidated error can list all
+    # affected sets at once instead of only the first one hit.
+    set_findings = []
 
     def _check_optional_data_accumulating(*args, **kwargs):
-        return _check_optional_data(
-            *args, empty_set_findings=empty_set_findings, **kwargs
-        )
+        return _check_optional_data(*args, set_findings=set_findings, **kwargs)
 
     # If either post_process or discrete config option is selected for water
     # quality, then additional data may be needed, depending on what node types
@@ -713,15 +711,18 @@ def check_required_data(df_sets, df_parameters, config, model_type="strategic"):
     # would index those parameters over the now-empty sets, so construction
     # fails with an internal error such as "Index '('CP01', 'N08')' is not
     # valid for indexed component 'p_CNA'".
-    if empty_set_findings:
+    if set_findings:
         findings_by_set = {}
-        for set_name, tabs in empty_set_findings:
-            findings_by_set.setdefault(set_name, set()).update(tabs)
+        for set_name, kind, tabs in set_findings:
+            existing = findings_by_set.setdefault(
+                set_name, {"kind": kind, "tabs": set()}
+            )
+            existing["tabs"].update(tabs)
 
-        # Role of each empty set, from the authors' source/sink groups
+        # Role of each affected set, from the authors' source/sink groups
         # (set_list_require_at_least_one): a set that is the scenario's only
-        # remaining water source or sink cannot be left empty, so "delete the
-        # referencing tabs" is not a viable fix for it.
+        # remaining water source or sink cannot be left empty or deleted, so
+        # "delete the referencing tabs" is not a viable fix for it.
         def _set_is_nonempty(name):
             return name in df_sets and len(df_sets[name]) > 0
 
@@ -743,38 +744,46 @@ def check_required_data(df_sets, df_parameters, config, model_type="strategic"):
             return None
 
         findings_lines_list = []
-        for set_name, tabs in findings_by_set.items():
+        for set_name, info in findings_by_set.items():
             role = _describe_role(set_name)
-            prefix = f"  - '{set_name}' (no facility names"
+            kind_text = (
+                "tab deleted or renamed"
+                if info["kind"] == "missing"
+                else "tab present but empty"
+            )
+            prefix = f"  - '{set_name}' ({kind_text}"
             if role:
                 prefix += f"; {role}"
             findings_lines_list.append(
-                prefix + f"): referenced by {', '.join(sorted(tabs))}"
+                prefix + f"): referenced by {', '.join(sorted(info['tabs']))}"
             )
         findings_lines = "\n".join(findings_lines_list)
         raise MissingDataError(
             f"Essential data is incomplete: {len(findings_by_set)} set tab(s) "
-            "are present but contain no facility names, while parameter tabs "
-            "that reference them still contain entries. The model would be "
-            "built with zero facilities for these sets, so every referencing "
-            "entry is invalid; this surfaces as internal errors such as "
-            "\"Index '('CP01', 'N08')' is not valid for indexed component "
-            "'p_CNA'\".\n"
+            "are missing from the workbook or contain no facility names, "
+            "while parameter tabs that reference them still contain entries. "
+            "The model would be built with zero facilities for these sets, so "
+            "every referencing entry is invalid; this surfaces as internal "
+            "errors such as \"Index '('CP01', 'N08')' is not valid for "
+            "indexed component 'p_CNA'\".\n"
             + findings_lines
-            + "\n\nNote: these tabs exist, but their rows were deleted or "
-            "their contents were cleared (different from tabs missing "
-            "entirely)."
+            + "\n\nNote: a tab listed as deleted was removed from the workbook "
+            "(or its name is not a valid PARETO set tab name); a tab listed as "
+            "present but empty had its rows deleted or its contents cleared. A "
+            "sheet that exists but fails to parse is reported by the 'Data "
+            "loading failed' warning and does not trigger this error."
             "\n\n"
             + "-" * 60
             + "\n"
             "To fix, either:\n"
-            "  - list the facility names in each set tab listed above (one "
-            "row per facility below the header row), or\n"
-            "  - if those facilities are not part of this scenario, empty or "
-            "delete the parameter tabs that reference them — but sets marked "
-            "as the scenario's only remaining water source or sink must "
-            "list at least one facility instead, or\n"
-            "  - restore the set tabs from the PARETO input template."
+            "  - restore the deleted set tabs from the PARETO input template "
+            "(a set tab needs its header row), or\n"
+            "  - list the facility names in the set tabs that are present but "
+            "empty (one row per facility below the header row), or\n"
+            "  - if those facilities are not part of this scenario, delete "
+            "the parameter tabs that reference them — but sets marked as the "
+            "scenario's only remaining water source or sink must list at "
+            "least one facility instead."
         )
 
     return (df_sets, df_parameters)
@@ -1041,7 +1050,7 @@ def _check_optional_data(
     required_sets_with_option,  # []
     required_parameters_with_option,  # ["BeneficialReuseCost","BeneficialReuseCredit"]
     requires_at_least_one=[],  # ["ROA", "SOA", "NOA", "ROT", "SOT"]
-    empty_set_findings=None,
+    set_findings=None,
 ):
     # create set object for df_sets and df_parameters for simpler list comparison
     _df_sets_set = set(df_sets)
@@ -1084,32 +1093,60 @@ def _check_optional_data(
     _input_parameters_dependent_on_optional_set = (
         set(required_parameters_with_option) & _df_parameters_set
     )
+    # Arc tabs matching the set's node-letter naming convention (e.g. CNA,
+    # CCT for CompletionsPads) also reference the set and are reported too.
+    node_letter = {
+        "ProductionPads": "P",
+        "CompletionsPads": "C",
+        "SWDSites": "K",
+        "ExternalWaterSources": "F",
+        "StorageSites": "S",
+        "TreatmentSites": "R",
+        "ReuseOptions": "O",
+        "NetworkNodes": "N",
+    }.get(optional_set_name)
+
+    def _nonempty_arc_tabs():
+        return sorted(
+            arc_tab
+            for arc_tab in df_parameters
+            if node_letter
+            and isinstance(arc_tab, str)
+            and len(arc_tab) == 3
+            and (arc_tab[0] == node_letter or arc_tab[1] == node_letter)
+            and arc_tab[-1] in ("A", "T")
+            and df_parameters.get(arc_tab)
+        )
+
     if optional_set_name not in df_sets and (
         len(_input_parameters_dependent_on_optional_set) > 0
     ):
-        raise MissingDataError(
-            f"Essential data is incomplete: the workbook contains parameter tabs for "
-            f"'{optional_set_name}' (dependent tabs: "
-            f"{str(_input_parameters_dependent_on_optional_set)}), but the "
-            f'"{optional_set_name}" set tab itself was not found in the workbook. '
-            f"Without that set, the model has no {optional_set_name} facilities and "
-            "the parameter tabs cannot be used."
-            f"\n\nNote: reaching this error means the '{optional_set_name}' tab is not "
-            "present in the workbook at all (or its name is not a valid PARETO set "
-            "tab name). A sheet that exists but fails to parse is reported by the "
-            "'Data loading failed' warning and does not trigger this error."
-            f"\n\nIf the tab was renamed or misspelled, scroll up for the warning "
-            "starting with 'Invalid PARETO input': it lists tab names that are not "
-            "standard PARETO inputs."
-            f"\n\n"
-            + "-" * 60
-            + "\n"
-            "To fix, either:\n"
-            f"  - restore the '{optional_set_name}' tab from the PARETO input template "
-            "(a set tab needs its header row), or\n"
-            f"  - if {optional_set_name} facilities are not part of this scenario, "
-            "delete the dependent parameter tabs listed above."
-        )
+        tabs = sorted(_input_parameters_dependent_on_optional_set) + _nonempty_arc_tabs()
+        if set_findings is None:
+            raise MissingDataError(
+                f"Essential data is incomplete: the workbook contains parameter tabs for "
+                f"'{optional_set_name}' (dependent tabs: "
+                f"{str(_input_parameters_dependent_on_optional_set)}), but the "
+                f'"{optional_set_name}" set tab itself was not found in the workbook. '
+                f"Without that set, the model has no {optional_set_name} facilities and "
+                "the parameter tabs cannot be used."
+                f"\n\nNote: reaching this error means the '{optional_set_name}' tab is not "
+                "present in the workbook at all (or its name is not a valid PARETO set "
+                "tab name). A sheet that exists but fails to parse is reported by the "
+                "'Data loading failed' warning and does not trigger this error."
+                f"\n\nIf the tab was renamed or misspelled, scroll up for the warning "
+                "starting with 'Invalid PARETO input': it lists tab names that are not "
+                "standard PARETO inputs."
+                f"\n\n"
+                + "-" * 60
+                + "\n"
+                "To fix, either:\n"
+                f"  - restore the '{optional_set_name}' tab from the PARETO input template "
+                "(a set tab needs its header row), or\n"
+                f"  - if {optional_set_name} facilities are not part of this scenario, "
+                "delete the dependent parameter tabs listed above."
+            )
+        set_findings.append((optional_set_name, "missing", tabs))
 
     # If the optional set is present but contains no facility names, while
     # parameter tabs that reference it still contain entries, the model cannot
@@ -1122,32 +1159,13 @@ def _check_optional_data(
         and len(df_sets[optional_set_name]) == 0
         and len(_input_parameters_dependent_on_optional_set) > 0
     ):
-        node_letter = {
-            "ProductionPads": "P",
-            "CompletionsPads": "C",
-            "SWDSites": "K",
-            "ExternalWaterSources": "F",
-            "StorageSites": "S",
-            "TreatmentSites": "R",
-            "ReuseOptions": "O",
-            "NetworkNodes": "N",
-        }.get(optional_set_name)
         referencing_tabs = sorted(
             tab
             for tab in _input_parameters_dependent_on_optional_set
             if df_parameters.get(tab)
-        ) + sorted(
-            arc_tab
-            for arc_tab in df_parameters
-            if node_letter
-            and isinstance(arc_tab, str)
-            and len(arc_tab) == 3
-            and arc_tab[0] == node_letter
-            and arc_tab[-1] in ("A", "T")
-            and df_parameters.get(arc_tab)
-        )
+        ) + _nonempty_arc_tabs()
         if referencing_tabs:
-            if empty_set_findings is None:
+            if set_findings is None:
                 raise MissingDataError(
                     f"Essential data is incomplete: the '{optional_set_name}' "
                     "tab is present but contains no facility names, while "
@@ -1174,7 +1192,7 @@ def _check_optional_data(
                     f"  - restore the '{optional_set_name}' tab from the "
                     "PARETO input template."
                 )
-            empty_set_findings.append((optional_set_name, referencing_tabs))
+            set_findings.append((optional_set_name, "empty", referencing_tabs))
     return (df_sets, df_parameters)
 
 
