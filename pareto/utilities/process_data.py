@@ -1106,6 +1106,13 @@ def _check_optional_data(
         "NetworkNodes": "N",
     }.get(optional_set_name)
 
+
+    # Function that extracts the arc tabs (network-connection tabs, e.g. CNA,
+    # CKT, PCA) that reference the optional set, matched by the node-letter
+    # naming convention in the tab name, and actually contain data. These tabs
+    # are not in required_parameters_with_option, but their entries index over
+    # the set and crash the build the same way when it is missing or emptied.
+
     def _nonempty_arc_tabs():
         return sorted(
             arc_tab
@@ -1118,9 +1125,16 @@ def _check_optional_data(
             and df_parameters.get(arc_tab)
         )
 
+    # Here we check if 1) the set tab is missing (optional_set_name not in
+    # df_sets: deleted from the workbook, or renamed/misspelled) and 2) something
+    # still depends on it: dependent parameter tabs included, or non-empty arc
+    # tabs referencing it.
+
     if optional_set_name not in df_sets and (
         len(_input_parameters_dependent_on_optional_set) > 0 or _nonempty_arc_tabs()
     ):
+        #We construct a tabs set that is based on the input parameters dependent on the optional set
+        #and the network-connection tabs
         tabs = sorted(_input_parameters_dependent_on_optional_set) + _nonempty_arc_tabs()
         if set_findings is None:
             raise MissingDataError(
