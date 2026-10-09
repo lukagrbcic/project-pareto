@@ -447,6 +447,8 @@ def check_required_data(df_sets, df_parameters, config, model_type="strategic"):
             "  - a 'Units' tab (volume, distance, time, pressure, and currency units),\n"
             "  - at least one water source tab (ProductionPads, CompletionsPads, or ExternalWaterSources),\n"
             "  - at least one water sink tab (CompletionsPads, SWDSites, ReuseOptions, or StorageSites).\n\n"
+            + "-" * 60
+            + "\n"
             "To fix: re-add the missing tab(s) from the PARETO input template, including their header rows. "
             "If a tab exists in the workbook but did not load, scroll up for a warning starting with "
             "'Data loading failed for the following sheets': it names the broken tab."
@@ -834,7 +836,10 @@ def model_infeasibility_detection(strategic_model):
             "Input data is infeasible: total produced water exceeds total system "
             "capacity in the listed period(s), so the model was never solved.\n"
             + error_message
-            + "\n\nTo fix: increase system capacity for the affected periods (e.g. "
+            + "\n\n"
+            + "-" * 60
+            + "\n"
+            "To fix: increase system capacity for the affected periods (e.g. "
             "InitialDisposalCapacity, InitialStorageCapacity, ReuseCapacity, or "
             "pipeline capacity) or reduce produced water (PadRates) in those periods.\n"
             "Note: this check is aggregate only; passing it does not guarantee the "
@@ -919,7 +924,10 @@ def model_infeasibility_detection(strategic_model):
                 "water (produced + external + stored) in the listed period(s), so the "
                 "model was never solved.\n"
                 + error_message
-                + "\n\nTo fix: increase supply or storage for the affected periods "
+                + "\n\n"
+                + "-" * 60
+                + "\n"
+                "To fix: increase supply or storage for the affected periods "
                 "(e.g. PadRates, ExtWaterSourcingAvailability, InitialStorageCapacity) "
                 "or reduce CompletionsDemand in those periods.\n"
                 "Note: this check stops at the first deficient period, so later "
@@ -1013,7 +1021,10 @@ def _check_optional_data(
             f"\n\nIf the tab was renamed or misspelled, scroll up for the warning "
             "starting with 'Invalid PARETO input': it lists tab names that are not "
             "standard PARETO inputs."
-            f"\n\nTo fix, either:\n"
+            f"\n\n"
+            + "-" * 60
+            + "\n"
+            "To fix, either:\n"
             f"  - restore the '{optional_set_name}' tab from the PARETO input template "
             "(a set tab needs its header row), or\n"
             f"  - if {optional_set_name} facilities are not part of this scenario, "
