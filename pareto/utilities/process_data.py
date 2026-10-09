@@ -696,98 +696,6 @@ def check_required_data(df_sets, df_parameters, config, model_type="strategic"):
         )
         warnings.warn(warning_message, stacklevel=3)
 
-    # ###############################################################################
-    # (OPTIONAL - commented out) Required data content, index coverage, and
-    # membership checks.
-    #
-    # Parameters in the model are defined with Pyomo defaults (e.g.
-    # p_beta_Production = Param(s_P, s_T, default=0)), so a tab that is present
-    # but empty, or a tab with missing entries, silently receives those default
-    # values when the model is built instead of raising an error. The checks
-    # below warn when a required tab is present but empty, when entries of a
-    # parameter's index cross product are missing, and when supplied entries
-    # reference names that are not in their set tabs. They are warnings only:
-    # they never raise and never modify the data. To enable, uncomment this
-    # block and also uncomment 'import itertools' at the top of this module.
-    # ###############################################################################
-    # parameter_list_complete_coverage = [
-    #     # (sheet, (index set tabs, Pyomo default substituted for missing entries))
-    #     ("PadRates", (("ProductionPads", "TimePeriods"), 0)),
-    #     ("CompletionsDemand", (("CompletionsPads", "TimePeriods"), 0)),
-    #     ("ExtWaterSourcingAvailability", (("ExternalWaterSources", "TimePeriods"), 0)),
-    #     ("InitialDisposalCapacity", (("SWDSites",), 0)),
-    #     ("InitialStorageCapacity", (("StorageSites",), 0)),
-    #     ("PadOffloadingCapacity", (("CompletionsPads",), 0)),
-    # ]
-    #
-    # for param in parameter_list_min_required:
-    #     if param in df_parameters.keys() and not df_parameters[param]:
-    #         warnings.warn(
-    #             f"Required data may be incomplete: the {param} tab is present but "
-    #             "contains no data rows, so every unit in the model falls back to "
-    #             "defaults. To fix: fill in the tab, or restore it from the PARETO "
-    #             "input template.",
-    #             stacklevel=3,
-    #         )
-    #
-    # for sheet, (index_set_names, default) in parameter_list_complete_coverage:
-    #     if sheet not in df_parameters.keys():
-    #         continue
-    #     # Build the member sets of the index tabs; skip the sheet if an index
-    #     # tab is missing or empty (nothing is expected from it, or the
-    #     # param-to-set checks above already reported it).
-    #     index_member_sets = []
-    #     skip_sheet = False
-    #     for set_name in index_set_names:
-    #         if set_name not in df_sets.keys() or len(df_sets[set_name]) == 0:
-    #             skip_sheet = True
-    #             break
-    #         index_member_sets.append(set(df_sets[set_name]))
-    #     if skip_sheet:
-    #         continue
-    #     # Every combination of the index tabs must be supplied, because missing
-    #     # entries silently receive the Pyomo default.
-    #     expected_entries = set(itertools.product(*index_member_sets))
-    #     supplied_entries = {
-    #         key if isinstance(key, tuple) else (key,)
-    #         for key in df_parameters[sheet]
-    #     }
-    #     missing_entries = sorted(expected_entries - supplied_entries)
-    #     if len(missing_entries) > 0:
-    #         shown_entries = ", ".join(str(entry) for entry in missing_entries[:20])
-    #         if len(missing_entries) > 20:
-    #             shown_entries += f" (and {len(missing_entries) - 20} more)"
-    #         warnings.warn(
-    #             f"Required data may be incomplete: {sheet} has no value supplied "
-    #             f"for {shown_entries}. Missing entries silently receive the "
-    #             f"default value {default} when the model is built, so those "
-    #             f"facilities/periods behave as if the value were {default}. "
-    #             f"To fix: enter a value for each missing cell in the {sheet} "
-    #             "tab, or remove the corresponding rows/columns (and their "
-    #             f"entries in the {', '.join(index_set_names)} tabs) if those "
-    #             "facilities or periods are not part of the scenario.",
-    #             stacklevel=3,
-    #         )
-    #     # Supplied entries must reference members of their index tabs; entries
-    #     # with unknown names are silently ignored when the model is built, so
-    #     # they behave as if they were missing.
-    #     for key in df_parameters[sheet].keys():
-    #         elements = key if isinstance(key, tuple) else (key,)
-    #         if len(elements) != len(index_set_names):
-    #             continue
-    #         for pos, element in enumerate(elements):
-    #             if element not in index_member_sets[pos]:
-    #                 warnings.warn(
-    #                     f"Required data may be inconsistent: {sheet} contains "
-    #                     f"the entry {key}, but '{element}' is not a member of the "
-    #                     f"'{index_set_names[pos]}' tab. Entries with unknown "
-    #                     "names are silently ignored when the model is built. "
-    #                     f"To fix: correct '{element}' in the {sheet} tab, or add "
-    #                     f"it to the '{index_set_names[pos]}' tab if it is a real "
-    #                     "facility or period that was omitted.",
-    #                     stacklevel=3,
-    #                 )
-
     return (df_sets, df_parameters)
 
 
@@ -1095,19 +1003,21 @@ def _check_optional_data(
             f"Essential data is incomplete: the workbook contains parameter tabs for "
             f"'{optional_set_name}' (dependent tabs: "
             f"{str(_input_parameters_dependent_on_optional_set)}), but the "
-            f'"{optional_set_name}" set tab itself is missing or failed to load. '
+            f'"{optional_set_name}" set tab itself was not found in the workbook. '
             f"Without that set, the model has no {optional_set_name} facilities and "
             "the parameter tabs cannot be used."
-            f"\n\nThis most often happens when the '{optional_set_name}' sheet failed "
-            "to parse (an empty or malformed sheet falls back to an empty read and "
-            "the set is dropped), or the sheet was deleted or renamed."
+            f"\n\nNote: reaching this error means the '{optional_set_name}' tab is not "
+            "present in the workbook at all (or its name is not a valid PARETO set "
+            "tab name). A sheet that exists but fails to parse is reported by the "
+            "'Data loading failed' warning and does not trigger this error."
+            f"\n\nIf the tab was renamed or misspelled, scroll up for the warning "
+            "starting with 'Invalid PARETO input': it lists tab names that are not "
+            "standard PARETO inputs."
             f"\n\nTo fix, either:\n"
             f"  - restore the '{optional_set_name}' tab from the PARETO input template "
             "(a set tab needs its header row), or\n"
             f"  - if {optional_set_name} facilities are not part of this scenario, "
-            "delete the dependent parameter tabs listed above.\n"
-            "Also scroll up for a warning starting with 'Data loading failed for the "
-            "following sheets': it names the actual broken tab(s)."
+            "delete the dependent parameter tabs listed above."
         )
     return (df_sets, df_parameters)
 
