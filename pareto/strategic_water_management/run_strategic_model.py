@@ -48,7 +48,7 @@ strategic_treatment_demo_surrogates.xlsx
 """
 with resources.path(
     "pareto.case_studies",
-    "strategic_toy_case_study_failure.xlsx",
+    "strategic_toy_case_study.xlsx",
 ) as fpath:
     # When set_list and parameter_list are not specified to get_data(), all tabs with valid PARETO input names are read
     [df_sets, df_parameters] = get_data(fpath, model_type="strategic")
@@ -145,6 +145,11 @@ pos = {
     "N08": (60, 30),
     "N09": (70, 40),
 }
+
+# Use the toy-case positions only when the toy case study is loaded; other case
+# studies get an automatic layout inside plot_network()
+if fpath.name != "strategic_toy_case_study.xlsx":
+    pos = {}
 
 # Network visualization feature
 plot_network(
