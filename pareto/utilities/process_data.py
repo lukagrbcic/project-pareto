@@ -447,7 +447,7 @@ def check_required_data(df_sets, df_parameters, config, model_type="strategic"):
     if len(data_error_items) > 0:
         error_message = ", ".join(data_error_items)
         raise MissingDataError(
-            "Essential data is incomplete: the workbook is missing required input tabs: "
+            "Essential data is incomplete. Please add the following missing data tabs: "
             + error_message
             + "\n\n"
             "Every strategic model needs:\n"
@@ -560,7 +560,6 @@ def check_required_data(df_sets, df_parameters, config, model_type="strategic"):
             "BeneficialReuseCredit",
             "ReuseMinimum",
             "ReuseCapacity",
-            "ReuseOperationalCost",
         },
         requires_at_least_one=[["ROA", "SOA", "NOA", "ROT", "SOT", "POT"]],
     )
@@ -742,6 +741,34 @@ def check_required_data(df_sets, df_parameters, config, model_type="strategic"):
                     return f"a {label} set"
             return None
 
+        refs_by_set = {
+            set_name: ", ".join(sorted(info["tabs"]))
+            for set_name, info in findings_by_set.items()
+        }
+
+        # One finding: lead with the plain per-set sentence (referencing tabs
+        # listed there). Several findings: skip the repeated sentences and let
+        # the bullets below carry kind, role, and referencing tabs.
+        old_style_head = ""
+        if len(findings_by_set) == 1:
+            set_name, info = next(iter(findings_by_set.items()))
+            if info["kind"] == "missing":
+                old_style_head = (
+                    f'Essential data is incomplete. Parameter data for {set_name} '
+                    f'is given, but the "{set_name}" Set is missing. Please add '
+                    f"and complete the following tab(s): {set_name}, or remove "
+                    f"the following Parameters: {refs_by_set[set_name]}"
+                )
+            else:
+                old_style_head = (
+                    f'Essential data is incomplete. The "{set_name}" Set tab is '
+                    "present but contains no facility names, while parameter "
+                    f"data for {set_name} is given. Please list the facility "
+                    f'names in the "{set_name}" tab, or remove the following '
+                    f"Parameters: {refs_by_set[set_name]}"
+                )
+            old_style_head += "\n\n"
+
         findings_lines_list = []
         for set_name, info in findings_by_set.items():
             role = _describe_role(set_name)
@@ -750,15 +777,17 @@ def check_required_data(df_sets, df_parameters, config, model_type="strategic"):
                 if info["kind"] == "missing"
                 else "tab present but empty"
             )
-            prefix = f"  - '{set_name}' ({kind_text}"
+            line = f"  - '{set_name}' ({kind_text}"
             if role:
-                prefix += f"; {role}"
-            findings_lines_list.append(
-                prefix + f"): referenced by {', '.join(sorted(info['tabs']))}"
-            )
+                line += f"; {role}"
+            line += ")"
+            if len(findings_by_set) > 1:
+                line += f": referenced by {refs_by_set[set_name]}"
+            findings_lines_list.append(line)
         findings_lines = "\n".join(findings_lines_list)
         raise MissingDataError(
-            f"Essential data is incomplete: {len(findings_by_set)} set tab(s) "
+            old_style_head
+            + f"Summary: {len(findings_by_set)} set tab(s) "
             "are missing from the workbook or contain no facility names, "
             "while parameter tabs that reference them still contain entries. "
             "The model would be built with zero facilities for these sets, so "
@@ -919,18 +948,20 @@ def model_infeasibility_detection(strategic_model):
 
     if capacity_feasibility_message:
         error_message = ", ".join(capacity_feasibility_message)
-        raise DataInfeasibilityError(
-            "Input data is infeasible: total produced water exceeds total system "
-            "capacity in the listed period(s), so the model was never solved.\n"
-            + error_message
-            + "\n\n"
-            + "-" * 60
-            + "\n"
+        print("-" * 60)
+        print(
             "To fix: increase system capacity for the affected periods (e.g. "
             "InitialDisposalCapacity, InitialStorageCapacity, ReuseCapacity, or "
-            "pipeline capacity) or reduce produced water (PadRates) in those periods.\n"
+            "pipeline capacity) or reduce produced water (PadRates) in those periods."
+        )
+        print(
             "Note: this check is aggregate only; passing it does not guarantee the "
             "network itself is feasible."
+        )
+        print("-" * 60)
+        raise DataInfeasibilityError(
+            "An infeasibility in the input data has been detected. Produced water volumes exceeds total system capacity for time periods: "
+            + error_message
         )
 
     # 2) INCREMENTAL STORAGE-BASED DEMAND CHECK
@@ -1006,19 +1037,20 @@ def model_infeasibility_detection(strategic_model):
 
         if demand_feasibility_message:
             error_message = ", ".join(str(tp) for tp in demand_feasibility_message)
-            raise DataInfeasibilityError(
-                "Input data is infeasible: completions demand exceeds total available "
-                "water (produced + external + stored) in the listed period(s), so the "
-                "model was never solved.\n"
-                + error_message
-                + "\n\n"
-                + "-" * 60
-                + "\n"
+            print("-" * 60)
+            print(
                 "To fix: increase supply or storage for the affected periods "
                 "(e.g. PadRates, ExtWaterSourcingAvailability, InitialStorageCapacity) "
-                "or reduce CompletionsDemand in those periods.\n"
+                "or reduce CompletionsDemand in those periods."
+            )
+            print(
                 "Note: this check stops at the first deficient period, so later "
                 "deficient periods are not listed; re-run after fixing to reveal any."
+            )
+            print("-" * 60)
+            raise DataInfeasibilityError(
+                "An infeasibility in the input data has been detected. Completion demand volume exceeds the total of produced water, external sources, and stored water in the following time periods: "
+                + error_message
             )
 
     return strategic_model
